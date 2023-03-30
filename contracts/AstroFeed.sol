@@ -2,6 +2,7 @@
 pragma solidity ^0.8.9;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+<<<<<<< HEAD
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
@@ -60,3 +61,22 @@ contract AstroFeed is ERC721, ReentrancyGuard, Ownable {
         return string(bstr);
     }
 }
+=======
+import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
+contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
+
+    uint256 private constant tokenID = 1;
+    mapping(uint256 => string) private tokenURI;
+
+    constructor() ERC1155("https://game.example/api/item/{id}.json")
+    {
+    }
+
+    function mintToken() external nonReentrant onlyOwner{
+        _mint(msg.sender, tokenID, 1, "0x00");
+    }
+
+}
+>>>>>>> 3cb8abbbf5862d64149e1ad8cefbccf20942533c
