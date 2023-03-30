@@ -10,6 +10,11 @@ module.exports = {
       accounts: [process.env.PRIVATE_KEY],
     },
   },
+  etherscan: {
+    apiKey: {
+      polygonMumbai: process.env.POLYGONSCAN_API_KEY
+    }
+  },
   solidity: {
     version: "0.8.9",
     settings: {
