@@ -2,34 +2,46 @@
 pragma solidity ^0.8.9;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-contract AstroFeed is ERC721, ReentrancyGuard, Ownable {
+contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
     using Counters for Counters.Counter;
+
+    struct MintToken {
+        address minter_address;
+        uint256 royalty;
+    }
 
     Counters.Counter private _tokenID;
     uint256 MAX_SUPPLY = 500;
-    // uint256 _Price = 85000000000000000; // 0.085 ETH
-    mapping(uint256 => address) public minter;
 
-    constructor() ERC721("ATC", "ATC") {}
+    mapping(uint256 => MintToken) public minter;
 
-    function _tokenMint() private {
-        _tokenID.increment();
-        uint256 tokenId = _tokenID.current();
-        minter[tokenId] = msg.sender;
-        _safeMint(msg.sender, tokenId);
-    }
+    constructor() ERC1155("https://infura.io/{id}.json") {}
 
-    function mint(uint256 mintCount) public nonReentrant {
+    function mint(uint256 mintCount, uint256 royalty) public nonReentrant {
         uint256 count = _tokenID.current() + mintCount;
         require(count <= MAX_SUPPLY, "Maximum supply reached.");
 
-        for (uint256 i = 0; i < mintCount; i++) {
-            _tokenMint();
+        _tokenID.increment();
+        uint256 tokenId = _tokenID.current();
+        minter[tokenId] = MintToken(msg.sender, royalty);
+        _mint(msg.sender, tokenId, mintCount, "");
+    }
+
+    function distribute() public payable {
+        uint256 count = _tokenID.current();
+        for (uint256 i = 0; i < count; i++) {
+            payable(minter[i].minter_address).transfer(
+                msg.value * (minter[i].royalty / 100)
+            );
         }
+    }
+
+    function getBalance() public view returns (uint256) {
+        return address(this).balance;
     }
 
     function getTokenId() public view returns (uint256) {
