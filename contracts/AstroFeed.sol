@@ -35,7 +35,7 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
         uint256 count = _tokenID.current();
         for (uint256 i = 0; i < count; i++) {
             payable(minter[i].minter_address).transfer(
-                msg.value * (minter[i].royalty / 100)
+                (msg.value * (minter[i].royalty / 100)) / count
             );
         }
     }
