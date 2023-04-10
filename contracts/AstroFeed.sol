@@ -2,39 +2,38 @@
 pragma solidity ^0.8.9;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
+import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
     using Counters for Counters.Counter;
-    Counters.Counter private _items;
-    Counters.Counter private _soldItems;
     Counters.Counter private _tokenID;
+    Counters.Counter private _nftsSold;
+    Counters.Counter private _nftCount;
+
     uint256 MAX_SUPPLY = 500;
+    uint256 public LISTING_FEE = 0.0001 ether;
 
-    address payable owner;
-
-    // interface to marketplace item
-    struct MarketplaceItem {
-        uint256 itemId;
+    mapping(uint256 => NFT) private _idToNFT;
+    struct NFT {
         uint256 tokenId;
         address payable seller;
         address payable owner;
         uint256 price;
-        bool sold;
+        bool listed;
     }
-
-    mapping(uint256 => MarketplaceItem) private idToMarketplaceItem;
-
-    // declare a event for when a item is created on marketplace
-    event MarketplaceItemCreated(
-        uint256 indexed itemId,
-        uint256 indexed tokenId,
+    event NFTListed(
+        uint256 tokenId,
         address seller,
         address owner,
-        uint256 price,
-        bool sold
+        uint256 price
+    );
+    event NFTSold(
+        uint256 tokenId,
+        address seller,
+        address owner,
+        uint256 price
     );
 
     struct MintToken {
@@ -44,9 +43,7 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
 
     mapping(uint256 => MintToken) public minter;
 
-    constructor() ERC1155("https://infura.io/{id}.json") {
-        owner = payable(msg.sender);
-    }
+    constructor() ERC1155("https://infura.io/{id}.json") {}
 
     function mint(uint256 mintCount, uint256 royalty) public nonReentrant {
         uint256 count = _tokenID.current() + mintCount;
@@ -67,6 +64,143 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
         }
     }
 
+    // List the NFT on the marketplace
+    function listNft(
+        uint256 _tokenId,
+        uint256 _price
+    ) public payable nonReentrant {
+        require(_price > 0, "Price must be at least 1 wei");
+
+        IERC1155(address(this)).safeTransferFrom(
+            msg.sender,
+            address(this),
+            _tokenId,
+            1,
+            ""
+        );
+
+        distribute();
+        _nftCount.increment();
+
+        _idToNFT[_tokenId] = NFT(
+            _tokenId,
+            payable(msg.sender),
+            payable(address(this)),
+            _price,
+            true
+        );
+
+        emit NFTListed(_tokenId, msg.sender, address(this), _price);
+    }
+
+    // Buy an NFT
+    function buyNft(uint256 _tokenId) public payable nonReentrant {
+        NFT storage nft = _idToNFT[_tokenId];
+        require(
+            msg.value >= nft.price,
+            "Not enough ether to cover asking price"
+        );
+
+        address payable buyer = payable(msg.sender);
+        payable(nft.seller).transfer(msg.value);
+        IERC1155(address(this)).safeTransferFrom(
+            address(this),
+            buyer,
+            nft.tokenId,
+            1,
+            ""
+        );
+        nft.owner = buyer;
+        nft.listed = false;
+
+        _nftsSold.increment();
+        emit NFTSold(nft.tokenId, nft.seller, buyer, msg.value);
+    }
+
+    // Resell an NFT purchased from the marketplace
+    function resellNft(
+        uint256 _tokenId,
+        uint256 _price
+    ) public payable nonReentrant {
+        require(_price > 0, "Price must be at least 1 wei");
+        require(msg.value == LISTING_FEE, "Not enough ether for listing fee");
+        IERC1155(address(this)).safeTransferFrom(
+            msg.sender,
+            address(this),
+            _tokenId,
+            1,
+            ""
+        );
+
+        NFT storage nft = _idToNFT[_tokenId];
+        nft.seller = payable(msg.sender);
+        nft.owner = payable(address(this));
+        nft.listed = true;
+        nft.price = _price;
+
+        _nftsSold.decrement();
+        emit NFTListed(_tokenId, msg.sender, address(this), _price);
+    }
+
+    function getListedNfts() public view returns (NFT[] memory) {
+        uint256 nftCount = _nftCount.current();
+        uint256 unsoldNftsCount = nftCount - _nftsSold.current();
+
+        NFT[] memory nfts = new NFT[](unsoldNftsCount);
+        uint nftsIndex = 0;
+        for (uint i = 0; i < nftCount; i++) {
+            if (_idToNFT[i + 1].listed) {
+                nfts[nftsIndex] = _idToNFT[i + 1];
+                nftsIndex++;
+            }
+        }
+        return nfts;
+    }
+
+    function getMyNfts() public view returns (NFT[] memory) {
+        uint nftCount = _nftCount.current();
+        uint myNftCount = 0;
+        for (uint i = 0; i < nftCount; i++) {
+            if (_idToNFT[i + 1].owner == msg.sender) {
+                myNftCount++;
+            }
+        }
+
+        NFT[] memory nfts = new NFT[](myNftCount);
+        uint nftsIndex = 0;
+        for (uint i = 0; i < nftCount; i++) {
+            if (_idToNFT[i + 1].owner == msg.sender) {
+                nfts[nftsIndex] = _idToNFT[i + 1];
+                nftsIndex++;
+            }
+        }
+        return nfts;
+    }
+
+    function getMyListedNfts() public view returns (NFT[] memory) {
+        uint nftCount = _nftCount.current();
+        uint myListedNftCount = 0;
+        for (uint i = 0; i < nftCount; i++) {
+            if (
+                _idToNFT[i + 1].seller == msg.sender && _idToNFT[i + 1].listed
+            ) {
+                myListedNftCount++;
+            }
+        }
+
+        NFT[] memory nfts = new NFT[](myListedNftCount);
+        uint nftsIndex = 0;
+        for (uint i = 0; i < nftCount; i++) {
+            if (
+                _idToNFT[i + 1].seller == msg.sender && _idToNFT[i + 1].listed
+            ) {
+                nfts[nftsIndex] = _idToNFT[i + 1];
+                nftsIndex++;
+            }
+        }
+        return nfts;
+    }
+
     function setMaxSupply(uint256 maxSupply) public onlyOwner {
         MAX_SUPPLY = maxSupply;
     }
@@ -77,154 +211,6 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
 
     function getTokenId() public view returns (uint256) {
         return _tokenID.current();
-    }
-
-    // places an item for sale on the marketplace
-    function createMarketplaceItem(
-        uint256 tokenId,
-        uint256 price
-    ) public payable nonReentrant {
-        require(price > 0, "Price must be at least 1 wei");
-
-        _items.increment();
-        uint256 itemId = _items.current();
-
-        idToMarketplaceItem[itemId] = MarketplaceItem(
-            itemId,
-            tokenId,
-            payable(msg.sender),
-            payable(address(0)),
-            price,
-            false
-        );
-
-        IERC1155(address(this)).safeTransferFrom(
-            msg.sender,
-            address(this),
-            tokenId,
-            1,
-            ""
-        );
-
-        emit MarketplaceItemCreated(
-            itemId,
-            tokenId,
-            msg.sender,
-            address(0),
-            price,
-            false
-        );
-    }
-
-    // creates the sale of a marketplace item
-    // transfers ownership of the item, as well as funds between parties
-    function createMarketplaceSale(uint256 itemId) public payable nonReentrant {
-        uint256 price = idToMarketplaceItem[itemId].price;
-        uint256 tokenId = idToMarketplaceItem[itemId].tokenId;
-
-        require(
-            msg.value == price,
-            "Please submit the asking price in order to complete the purchase"
-        );
-
-        idToMarketplaceItem[itemId].seller.transfer(msg.value);
-        IERC1155(address(this)).safeTransferFrom(
-            address(this),
-            msg.sender,
-            tokenId,
-            1,
-            ""
-        );
-
-        idToMarketplaceItem[itemId].owner = payable(msg.sender);
-        idToMarketplaceItem[itemId].sold = true;
-
-        _soldItems.increment();
-
-        distribute();
-        // payable(owner).transfer(listingPrice);
-    }
-
-    // returns all unsold marketplace items
-    function fetchMarketplaceItems()
-        public
-        view
-        returns (MarketplaceItem[] memory)
-    {
-        uint256 itemCount = _items.current();
-        uint256 unsoldItemCount = _items.current() - _soldItems.current();
-        uint256 currentIndex = 0;
-
-        MarketplaceItem[] memory items = new MarketplaceItem[](unsoldItemCount);
-        for (uint256 i = 0; i < itemCount; i++) {
-            if (idToMarketplaceItem[i + 1].owner == address(0)) {
-                uint256 currentId = i + 1;
-                MarketplaceItem storage currentItem = idToMarketplaceItem[
-                    currentId
-                ];
-                items[currentIndex] = currentItem;
-                currentIndex += 1;
-            }
-        }
-        return items;
-    }
-
-    // returns only items that a user has purchased
-    function fetchMyNFTs() public view returns (MarketplaceItem[] memory) {
-        uint256 totalItemCount = _items.current();
-        uint256 itemCount = 0;
-        uint256 currentIndex = 0;
-
-        for (uint256 i = 0; i < totalItemCount; i++) {
-            if (idToMarketplaceItem[i + 1].owner == msg.sender) {
-                itemCount += 1;
-            }
-        }
-
-        MarketplaceItem[] memory items = new MarketplaceItem[](itemCount);
-        for (uint256 i = 0; i < totalItemCount; i++) {
-            if (idToMarketplaceItem[i + 1].owner == msg.sender) {
-                uint256 currentId = i + 1;
-                MarketplaceItem storage currentItem = idToMarketplaceItem[
-                    currentId
-                ];
-                items[currentIndex] = currentItem;
-                currentIndex += 1;
-            }
-        }
-        return items;
-    }
-
-    // returns only items a user has created
-    function fetchItemsCreated()
-        public
-        view
-        returns (MarketplaceItem[] memory)
-    {
-        uint256 totalItemCount = _items.current();
-        uint256 itemCount = 0;
-        uint256 currentIndex = 0;
-
-        for (uint256 i = 0; i < totalItemCount; i++) {
-            if (idToMarketplaceItem[i + 1].seller == msg.sender) {
-                itemCount += 1;
-            }
-        }
-
-        MarketplaceItem[] memory items = new MarketplaceItem[](itemCount);
-
-        for (uint256 i = 0; i < totalItemCount; i++) {
-            if (idToMarketplaceItem[i + 1].seller == msg.sender) {
-                uint256 currentId = i + 1;
-                MarketplaceItem storage currentItem = idToMarketplaceItem[
-                    currentId
-                ];
-                items[currentIndex] = currentItem;
-                currentIndex += 1;
-            }
-        }
-
-        return items;
     }
 
     function uint2str(
