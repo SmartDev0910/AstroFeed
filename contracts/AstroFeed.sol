@@ -79,7 +79,6 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
             ""
         );
 
-        distribute();
         _nftCount.increment();
 
         _idToNFT[_tokenId] = NFT(
@@ -103,6 +102,7 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
 
         address payable buyer = payable(msg.sender);
         payable(nft.seller).transfer(msg.value);
+        distribute();
         IERC1155(address(this)).safeTransferFrom(
             address(this),
             buyer,
