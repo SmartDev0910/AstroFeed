@@ -123,7 +123,7 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
         uint256 _price
     ) public payable nonReentrant {
         require(_price > 0, "Price must be at least 1 wei");
-        require(msg.value == LISTING_FEE, "Not enough ether for listing fee");
+
         IERC1155(address(this)).safeTransferFrom(
             msg.sender,
             address(this),
