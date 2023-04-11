@@ -45,6 +45,7 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
 
     mapping(uint256 => NFT) private _idToNFT;
     mapping(uint256 => MintToken) public minter;
+    mapping(uint256 => bool) public isApproved;
 
     constructor() ERC1155("https://infura.io/{id}.json") {}
 
@@ -65,12 +66,22 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
         }
     }
 
+    // Approve the NFT before list it.
+    function approveNft(uint256 _tokenId) public {
+        require(
+            minter[_tokenId].minter_address == msg.sender,
+            "You are not the minter of this NFT."
+        );
+        isApproved[_tokenId] = true;
+    }
+
     // List the NFT on the marketplace
     function listNft(
         uint256 _tokenId,
         uint256 _price
     ) public payable nonReentrant {
         require(_price > 0, "Price must be at least 1 wei");
+        require(isApproved[_tokenId] == true, "This NFT is not approved.");
 
         _nftCount.increment();
 
