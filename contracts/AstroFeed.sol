@@ -14,8 +14,8 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
 
     uint256 MAX_SUPPLY = 500;
     uint256 public LISTING_FEE = 0.0001 ether;
+    uint256 public royaltyCost = 0;
 
-    mapping(uint256 => NFT) private _idToNFT;
     struct NFT {
         uint256 tokenId;
         address payable seller;
@@ -23,12 +23,14 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
         uint256 price;
         bool listed;
     }
+
     event NFTListed(
         uint256 tokenId,
         address seller,
         address owner,
         uint256 price
     );
+
     event NFTSold(
         uint256 tokenId,
         address seller,
@@ -41,6 +43,7 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
         uint256 royalty;
     }
 
+    mapping(uint256 => NFT) private _idToNFT;
     mapping(uint256 => MintToken) public minter;
 
     constructor() ERC1155("https://infura.io/{id}.json") {}
@@ -55,12 +58,10 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
         _mint(msg.sender, tokenId, mintCount, "");
     }
 
-    function distribute() public payable {
+    function distribute() public payable onlyOwner {
         uint256 count = _tokenID.current();
         for (uint256 i = 0; i < count; i++) {
-            payable(minter[i].minter_address).transfer(
-                (msg.value * (minter[i].royalty / 100)) / count
-            );
+            payable(minter[i].minter_address).transfer(royaltyCost / count);
         }
     }
 
@@ -71,20 +72,12 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
     ) public payable nonReentrant {
         require(_price > 0, "Price must be at least 1 wei");
 
-        IERC1155(address(this)).safeTransferFrom(
-            msg.sender,
-            address(this),
-            _tokenId,
-            1,
-            ""
-        );
-
         _nftCount.increment();
 
         _idToNFT[_tokenId] = NFT(
             _tokenId,
             payable(msg.sender),
-            payable(address(this)),
+            payable(msg.sender),
             _price,
             true
         );
@@ -101,10 +94,13 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
         );
 
         address payable buyer = payable(msg.sender);
-        payable(nft.seller).transfer(msg.value);
-        distribute();
-        IERC1155(address(this)).safeTransferFrom(
-            address(this),
+        payable(nft.seller).transfer(
+            msg.value * ((1000 - minter[_tokenId].royalty) / 100)
+        );
+        royaltyCost += msg.value * (minter[_tokenId].royalty / 100);
+
+        IERC1155(msg.sender).safeTransferFrom(
+            nft.seller,
             buyer,
             nft.tokenId,
             1,
@@ -115,31 +111,6 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
 
         _nftsSold.increment();
         emit NFTSold(nft.tokenId, nft.seller, buyer, msg.value);
-    }
-
-    // Resell an NFT purchased from the marketplace
-    function resellNft(
-        uint256 _tokenId,
-        uint256 _price
-    ) public payable nonReentrant {
-        require(_price > 0, "Price must be at least 1 wei");
-
-        IERC1155(address(this)).safeTransferFrom(
-            msg.sender,
-            address(this),
-            _tokenId,
-            1,
-            ""
-        );
-
-        NFT storage nft = _idToNFT[_tokenId];
-        nft.seller = payable(msg.sender);
-        nft.owner = payable(address(this));
-        nft.listed = true;
-        nft.price = _price;
-
-        _nftsSold.decrement();
-        emit NFTListed(_tokenId, msg.sender, address(this), _price);
     }
 
     function getListedNfts() public view returns (NFT[] memory) {
