@@ -13,7 +13,6 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
     Counters.Counter private _nftCount;
 
     uint256 MAX_SUPPLY = 500;
-    uint256 public LISTING_FEE = 0.0001 ether;
     uint256 public royaltyCost = 0;
 
     struct NFT {
