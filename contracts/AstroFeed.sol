@@ -3,11 +3,13 @@ pragma solidity ^0.8.9;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
     using Counters for Counters.Counter;
+    using SafeMath for uint256;
     Counters.Counter private _tokenID;
     Counters.Counter private _nftsSold;
     Counters.Counter private _nftCount;
@@ -20,6 +22,7 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
         address payable seller;
         address payable owner;
         uint256 price;
+        uint256 fee;
         bool listed;
     }
 
@@ -38,7 +41,7 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
     );
 
     struct MintToken {
-        address minter_address;
+        address holder_address;
         uint256 royalty;
     }
 
@@ -46,7 +49,7 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
     mapping(uint256 => MintToken) public minter;
     mapping(uint256 => bool) public isApproved;
 
-    constructor() ERC1155("https://infura.io/{id}.json") {}
+    constructor() ERC1155("ipfs://f0{id}") {}
 
     function mint(uint256 mintCount, uint256 royalty) public nonReentrant {
         uint256 count = _tokenID.current() + mintCount;
@@ -61,14 +64,21 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
     function distribute() public payable onlyOwner {
         uint256 count = _tokenID.current();
         for (uint256 i = 0; i < count; i++) {
-            payable(minter[i].minter_address).transfer(royaltyCost / count);
+            payable(minter[i].holder_address).transfer(royaltyCost / count);
         }
+    }
+
+    function uri(uint256 tokenId) public pure override returns (string memory) {
+        string memory hexstringtokenID;
+        hexstringtokenID = uint2hexstr(tokenId);
+
+        return string(abi.encodePacked("ipfs://f0", hexstringtokenID));
     }
 
     // Approve the NFT before list it.
     function approveNft(uint256 _tokenId) public {
         require(
-            minter[_tokenId].minter_address == msg.sender,
+            minter[_tokenId].holder_address == msg.sender,
             "You are not the minter of this NFT."
         );
         isApproved[_tokenId] = true;
@@ -77,7 +87,8 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
     // List the NFT on the marketplace
     function listNft(
         uint256 _tokenId,
-        uint256 _price
+        uint256 _price,
+        uint256 _fee
     ) public payable nonReentrant {
         require(_price > 0, "Price must be at least 1 wei");
         require(isApproved[_tokenId] == true, "This NFT is not approved.");
@@ -89,6 +100,7 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
             payable(msg.sender),
             payable(msg.sender),
             _price,
+            _fee,
             true
         );
 
@@ -104,9 +116,13 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
         );
 
         address payable buyer = payable(msg.sender);
+
+        minter[_tokenId].holder_address = buyer;
+
         payable(nft.seller).transfer(
-            msg.value * ((1000 - minter[_tokenId].royalty) / 100)
+            msg.value * ((1000 - (minter[_tokenId].royalty + nft.fee)) / 100)
         );
+
         royaltyCost += msg.value * (minter[_tokenId].royalty / 100);
 
         IERC1155(msg.sender).safeTransferFrom(
@@ -214,6 +230,27 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
             bytes1 b1 = bytes1(temp);
             bstr[k] = b1;
             _i /= 10;
+        }
+        return string(bstr);
+    }
+
+    function uint2hexstr(uint256 i) public pure returns (string memory) {
+        if (i == 0) return "0";
+        uint j = i;
+        uint length;
+        while (j != 0) {
+            length++;
+            j = j >> 4;
+        }
+        uint mask = 15;
+        bytes memory bstr = new bytes(length);
+        uint k = length;
+        while (i != 0) {
+            uint curr = (i & mask);
+            bstr[--k] = curr > 9
+                ? bytes1(uint8(55 + curr))
+                : bytes1(uint8(48 + curr)); // 55 = 65 - 10
+            i = i >> 4;
         }
         return string(bstr);
     }
