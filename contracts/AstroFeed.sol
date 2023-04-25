@@ -3,13 +3,11 @@ pragma solidity ^0.8.9;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
     using Counters for Counters.Counter;
-    using SafeMath for uint256;
     Counters.Counter private _tokenID;
     Counters.Counter private _nftsSold;
     Counters.Counter private _nftCount;
