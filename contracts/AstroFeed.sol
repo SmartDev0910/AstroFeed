@@ -13,6 +13,7 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
     Counters.Counter private _nftCount;
 
     uint256 MAX_SUPPLY = 500;
+    uint256 MAX_ROYALTY = 4000;
     uint256 public royaltyCost = 0;
 
     struct NFT {
@@ -52,6 +53,7 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
     function mint(uint256 mintCount, uint256 royalty) public nonReentrant {
         uint256 count = _tokenID.current() + mintCount;
         require(count <= MAX_SUPPLY, "Maximum supply reached.");
+        require(royalty <= MAX_ROYALTY, "Maximum royalty reached.");
 
         _tokenID.increment();
         uint256 tokenId = _tokenID.current();
@@ -111,6 +113,11 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
         require(
             msg.value >= nft.price,
             "Not enough ether to cover asking price"
+        );
+
+        require(
+            minter[_tokenId].royalty + nft.fee <= MAX_ROYALTY,
+            "Maximum royalty reached."
         );
 
         address payable buyer = payable(msg.sender);
