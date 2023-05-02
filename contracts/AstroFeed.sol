@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.9;
+pragma solidity ^0.8.11;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@thirdweb-dev/contracts/base/ERC1155SignatureMint.sol";
+import {ITokenERC1155} from "@thirdweb-dev/contracts/interfaces/token/ITokenERC1155.sol";
 
-contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
+contract AstroFeed is ERC1155SignatureMint, ReentrancyGuard {
     using Counters for Counters.Counter;
     Counters.Counter private _tokenID;
     Counters.Counter private _nftsSold;
@@ -15,6 +15,7 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
     uint256 MAX_SUPPLY = 500;
     uint256 MAX_ROYALTY = 4000;
     uint256 public royaltyCost = 0;
+    address private immutable _primarySaleRecipient;
 
     struct NFT {
         uint256 tokenId;
@@ -41,24 +42,52 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
 
     struct MintToken {
         address holder_address;
-        uint256 royalty;
+        uint256 royaltyBps;
     }
 
     mapping(uint256 => NFT) private _idToNFT;
     mapping(uint256 => MintToken) public minter;
     mapping(uint256 => bool) public isApproved;
 
-    constructor() ERC1155("ipfs://f0{id}") {}
+    constructor(
+        string memory name,
+        string memory symbol,
+        address royaltyRecipient,
+        uint128 royaltyBps,
+        address primarySaleRecipient
+    )
+        ERC1155SignatureMint(
+            name,
+            symbol,
+            royaltyRecipient,
+            royaltyBps,
+            primarySaleRecipient
+        )
+    {
+        _primarySaleRecipient = primarySaleRecipient;
+    }
 
-    function mint(uint256 mintCount, uint256 royalty) public nonReentrant {
-        uint256 count = _tokenID.current() + mintCount;
+    function mint(
+        MintRequest calldata _req,
+        bytes calldata _signature
+    ) public nonReentrant {
+        uint256 count = _tokenID.current() + 1;
         require(count <= MAX_SUPPLY, "Maximum supply reached.");
-        require(royalty <= MAX_ROYALTY, "Maximum royalty reached.");
+        require(_req.royaltyBps <= MAX_ROYALTY, "Maximum royaltyBps reached.");
 
         _tokenID.increment();
         uint256 tokenId = _tokenID.current();
-        minter[tokenId] = MintToken(msg.sender, royalty);
-        _mint(msg.sender, tokenId, mintCount, "");
+        minter[tokenId] = MintToken(msg.sender, _req.royaltyBps);
+
+        // Mint tokens.
+        _mint(msg.sender, tokenId, _req.quantity, "");
+
+        emit TokensMintedWithSignature(
+            _processRequest(_req, _signature),
+            msg.sender,
+            tokenId,
+            _req
+        );
     }
 
     function distribute() public payable onlyOwner {
@@ -116,8 +145,8 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
         );
 
         require(
-            minter[_tokenId].royalty + nft.fee <= MAX_ROYALTY,
-            "Maximum royalty reached."
+            minter[_tokenId].royaltyBps + nft.fee <= MAX_ROYALTY,
+            "Maximum royaltyBps reached."
         );
 
         address payable buyer = payable(msg.sender);
@@ -125,12 +154,12 @@ contract AstroFeed is ERC1155, ReentrancyGuard, Ownable {
         minter[_tokenId].holder_address = buyer;
 
         payable(nft.seller).transfer(
-            msg.value * ((1000 - (minter[_tokenId].royalty + nft.fee)) / 100)
+            msg.value * ((1000 - (minter[_tokenId].royaltyBps + nft.fee)) / 100)
         );
 
-        royaltyCost += msg.value * (minter[_tokenId].royalty / 100);
+        royaltyCost += msg.value * (minter[_tokenId].royaltyBps / 100);
 
-        IERC1155(msg.sender).safeTransferFrom(
+        ITokenERC1155(msg.sender).safeTransferFrom(
             nft.seller,
             buyer,
             nft.tokenId,
