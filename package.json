@@ -19,6 +19,8 @@
   },
   "dependencies": {
     "@openzeppelin/contracts": "^4.8.1",
+    "@openzeppelin/contracts-upgradeable": "^4.8.3",
+    "@thirdweb-dev/contracts": "^3.4.5",
     "dotenv": "^16.0.3"
   }
 }
